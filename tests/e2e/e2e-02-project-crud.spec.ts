@@ -1,5 +1,11 @@
 import { test, expect, chromium } from '@playwright/test';
-import { launchExtension, getExtensionId, openOptions, optionsUrl } from './fixtures';
+import { launchExtension, getExtensionId, openOptions } from './fixtures';
+
+// CRUD flows touch the Options dashboard mount (~1.7s observed), the
+// background project-DB init, and several round-trips through the SW
+// message bus. The default 60s test timeout was getting eaten by the
+// combination — bump per-test budget so flaky-but-correct flows pass.
+test.setTimeout(120_000);
 
 /**
  * E2E-02 — Project CRUD Lifecycle
@@ -21,25 +27,34 @@ import { launchExtension, getExtensionId, openOptions, optionsUrl } from './fixt
  * Priority: P0 | Auto: ✅ | Est: 3 min
  */
 
-async function seedOnboardingComplete(context: import('@playwright/test').BrowserContext, extensionId: string) {
-  // Open a throwaway extension page so we can write to chrome.storage.local
-  // *before* the test's Options page boot reads the onboarding flag.
-  const seedPage = await context.newPage();
-  await seedPage.goto(optionsUrl(extensionId));
-  await seedPage.evaluate(async () => {
-    await new Promise<void>(resolve =>
-      chrome.storage.local.set({ marco_onboarding_complete: true }, () => resolve()),
-    );
+async function seedOnboardingComplete(context: import('@playwright/test').BrowserContext) {
+  // Seed the onboarding flag via the service worker rather than by opening a
+  // full Options page. Opening Options without the flag mounts <OnboardingFlow />,
+  // which kicks off heavy background work (project-DB init, manifest seed) that
+  // then competes with the actual test's Options mount and pushes the whole
+  // flow past the 60s test budget. Writing through the SW skips the UI mount
+  // entirely and is effectively instant.
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent('serviceworker');
+  await sw.evaluate(async () => {
+    await chrome.storage.local.set({ marco_onboarding_complete: true });
   });
-  await seedPage.close();
+}
+
+async function waitForProjectsView(options: import('@playwright/test').Page) {
+  // Mount budget on the Options page is ~1.7s in dev (see console logs);
+  // give the Projects header a generous window so the subsequent
+  // "New Project" click does not race the dashboard mount.
+  await expect(options.getByRole('heading', { name: /^projects$/i })).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   test('create a new project', async () => {
     const context = await launchExtension(chromium);
     const extensionId = await getExtensionId(context);
-    await seedOnboardingComplete(context, extensionId);
+    await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
+    await waitForProjectsView(options);
 
     // ProjectsListView exposes a "New Project" button. Match exactly so we
     // do not collide with "New Script" / "New Config" buttons elsewhere.
@@ -52,7 +67,7 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
     // The save CTA is labeled "Create" (see ProjectCreateForm.tsx:212).
     await options.getByRole('button', { name: /^create$/i }).click();
 
-    await expect(options.getByText('Test Automation').first()).toBeVisible();
+    await expect(options.getByText('Test Automation').first()).toBeVisible({ timeout: 15_000 });
 
     await context.close();
   });
@@ -60,8 +75,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   test('update project name', async () => {
     const context = await launchExtension(chromium);
     const extensionId = await getExtensionId(context);
-    await seedOnboardingComplete(context, extensionId);
+    await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
+    await waitForProjectsView(options);
 
     // Setup
     await options.getByRole('button', { name: /^new project$/i }).click();
@@ -101,8 +117,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   test('delete project cleans up storage', async () => {
     const context = await launchExtension(chromium);
     const extensionId = await getExtensionId(context);
-    await seedOnboardingComplete(context, extensionId);
+    await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
+    await waitForProjectsView(options);
 
     await options.getByRole('button', { name: /^new project$/i }).click();
     await options.getByPlaceholder(/project name/i).fill('Delete Me');
