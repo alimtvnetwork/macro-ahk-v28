@@ -1,4 +1,4 @@
-import { test as base, chromium, type BrowserContext, type Page } from '@playwright/test';
+import { test as base, chromium, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -47,6 +47,14 @@ function resolveExtensionPath(): string {
 }
 
 const EXTENSION_PATH = resolveExtensionPath();
+const EXTENSION_FIXTURE_TIMEOUT_MS = 120_000;
+const SERVICE_WORKER_TIMEOUT_MS = 30_000;
+
+function ensureExtensionFixtureBudget(testInfo: TestInfo): void {
+  if (testInfo.timeout < EXTENSION_FIXTURE_TIMEOUT_MS) {
+    testInfo.setTimeout(EXTENSION_FIXTURE_TIMEOUT_MS);
+  }
+}
 
 // ─── Manifest-Driven Page Paths ──────────────────────────────────────
 //
@@ -105,7 +113,9 @@ export async function launchExtension(
 /** Resolve the extension's internal ID from the service worker. */
 export async function getExtensionId(context: BrowserContext): Promise<string> {
   let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent('serviceworker');
+  if (!sw) {
+    sw = await context.waitForEvent('serviceworker', { timeout: SERVICE_WORKER_TIMEOUT_MS });
+  }
   const url = sw.url();
   const match = url.match(/chrome-extension:\/\/([^/]+)/);
   if (!match) throw new Error('Could not resolve extension ID from service worker URL');
@@ -217,16 +227,18 @@ type ExtensionFixtures = {
  */
 export const test = base.extend<ExtensionFixtures>({
   // eslint-disable-next-line no-empty-pattern
-  context: async ({}, use) => {
+  context: [async ({}, use, testInfo) => {
+    ensureExtensionFixtureBudget(testInfo);
     const ctx = await launchExtension();
     await use(ctx);
     await ctx.close();
-  },
+  }, { timeout: EXTENSION_FIXTURE_TIMEOUT_MS }],
 
-  extensionId: async ({ context }, use) => {
+  extensionId: [async ({ context }, use, testInfo) => {
+    ensureExtensionFixtureBudget(testInfo);
     const id = await getExtensionId(context);
     await use(id);
-  },
+  }, { timeout: SERVICE_WORKER_TIMEOUT_MS }],
 
   popup: async ({ context, extensionId }, use) => {
     const page = await openPopup(context, extensionId);
