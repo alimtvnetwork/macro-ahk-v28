@@ -48,11 +48,24 @@ async function waitForProjectsView(options: Page) {
   await expect(options.getByRole('heading', { name: /^projects$/i })).toBeVisible({ timeout: 30_000 });
 }
 
+async function openCrudOptions(context: BrowserContext, extensionId: string): Promise<Page> {
+  await seedOnboardingComplete(context);
+  const options = await openOptions(context, extensionId);
+
+  // The recorder controller is fixed in the top-right of Options and can cover
+  // the Projects toolbar in Chromium. Playwright then retries the click until
+  // the test budget expires with "subtree intercepts pointer events". CRUD is
+  // not testing the recorder, so neutralize only that overlay for this spec.
+  await options.addStyleTag({
+    content: '[data-testid^="floating-controller-"] { pointer-events: none !important; }',
+  });
+  await waitForProjectsView(options);
+  return options;
+}
+
 test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   test('create a new project', async ({ context, extensionId }) => {
-    await seedOnboardingComplete(context);
-    const options = await openOptions(context, extensionId);
-    await waitForProjectsView(options);
+    const options = await openCrudOptions(context, extensionId);
 
     // ProjectsListView exposes a "New Project" button. Match exactly so we
     // do not collide with "New Script" / "New Config" buttons elsewhere.
@@ -70,9 +83,7 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   });
 
   test('update project name', async ({ context, extensionId }) => {
-    await seedOnboardingComplete(context);
-    const options = await openOptions(context, extensionId);
-    await waitForProjectsView(options);
+    const options = await openCrudOptions(context, extensionId);
 
     // Setup
     await options.getByRole('button', { name: /^new project$/i }).click();
@@ -109,9 +120,7 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   });
 
   test('delete project cleans up storage', async ({ context, extensionId }) => {
-    await seedOnboardingComplete(context);
-    const options = await openOptions(context, extensionId);
-    await waitForProjectsView(options);
+    const options = await openCrudOptions(context, extensionId);
 
     await options.getByRole('button', { name: /^new project$/i }).click();
     await options.getByPlaceholder(/project name/i).fill('Delete Me');
