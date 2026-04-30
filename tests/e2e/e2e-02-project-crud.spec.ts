@@ -49,9 +49,7 @@ async function waitForProjectsView(options: Page) {
 }
 
 test.describe('E2E-02 — Project CRUD Lifecycle', () => {
-  test('create a new project', async () => {
-    const context = await launchExtension(chromium);
-    const extensionId = await getExtensionId(context);
+  test('create a new project', async ({ context, extensionId }) => {
     await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
     await waitForProjectsView(options);
@@ -69,12 +67,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
 
     await expect(options.getByText('Test Automation').first()).toBeVisible({ timeout: 15_000 });
 
-    await context.close();
   });
 
-  test('update project name', async () => {
-    const context = await launchExtension(chromium);
-    const extensionId = await getExtensionId(context);
+  test('update project name', async ({ context, extensionId }) => {
     await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
     await waitForProjectsView(options);
@@ -111,12 +106,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
 
     await expect(options.getByText('Test Automation v2').first()).toBeVisible({ timeout: 10000 });
 
-    await context.close();
   });
 
-  test('delete project cleans up storage', async () => {
-    const context = await launchExtension(chromium);
-    const extensionId = await getExtensionId(context);
+  test('delete project cleans up storage', async ({ context, extensionId }) => {
     await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
     await waitForProjectsView(options);
@@ -144,6 +136,5 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
 
     await expect(options.getByText('Delete Me')).not.toBeVisible({ timeout: 10000 });
 
-    await context.close();
   });
 });
