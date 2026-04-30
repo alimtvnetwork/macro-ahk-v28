@@ -225,16 +225,18 @@ type ExtensionFixtures = {
  */
 export const test = base.extend<ExtensionFixtures>({
   // eslint-disable-next-line no-empty-pattern
-  context: async ({}, use) => {
+  context: [async ({}, use, testInfo) => {
+    ensureExtensionFixtureBudget(testInfo);
     const ctx = await launchExtension();
     await use(ctx);
     await ctx.close();
-  },
+  }, { timeout: EXTENSION_FIXTURE_TIMEOUT_MS }],
 
-  extensionId: async ({ context }, use) => {
+  extensionId: [async ({ context }, use, testInfo) => {
+    ensureExtensionFixtureBudget(testInfo);
     const id = await getExtensionId(context);
     await use(id);
-  },
+  }, { timeout: SERVICE_WORKER_TIMEOUT_MS }],
 
   popup: async ({ context, extensionId }, use) => {
     const page = await openPopup(context, extensionId);
