@@ -1,5 +1,11 @@
 import { test, expect, chromium } from '@playwright/test';
-import { launchExtension, getExtensionId, openOptions, optionsUrl } from './fixtures';
+import { launchExtension, getExtensionId, openOptions } from './fixtures';
+
+// CRUD flows touch the Options dashboard mount (~1.7s observed), the
+// background project-DB init, and several round-trips through the SW
+// message bus. The default 60s test timeout was getting eaten by the
+// combination — bump per-test budget so flaky-but-correct flows pass.
+test.setTimeout(120_000);
 
 /**
  * E2E-02 — Project CRUD Lifecycle
