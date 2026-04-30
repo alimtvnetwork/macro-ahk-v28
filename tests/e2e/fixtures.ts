@@ -113,7 +113,9 @@ export async function launchExtension(
 /** Resolve the extension's internal ID from the service worker. */
 export async function getExtensionId(context: BrowserContext): Promise<string> {
   let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent('serviceworker', { timeout: SERVICE_WORKER_TIMEOUT_MS });
+  if (!sw) {
+    sw = await context.waitForEvent('serviceworker', { timeout: SERVICE_WORKER_TIMEOUT_MS });
+  }
   const url = sw.url();
   const match = url.match(/chrome-extension:\/\/([^/]+)/);
   if (!match) throw new Error('Could not resolve extension ID from service worker URL');
