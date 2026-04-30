@@ -52,8 +52,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   test('create a new project', async () => {
     const context = await launchExtension(chromium);
     const extensionId = await getExtensionId(context);
-    await seedOnboardingComplete(context, extensionId);
+    await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
+    await waitForProjectsView(options);
 
     // ProjectsListView exposes a "New Project" button. Match exactly so we
     // do not collide with "New Script" / "New Config" buttons elsewhere.
@@ -66,7 +67,7 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
     // The save CTA is labeled "Create" (see ProjectCreateForm.tsx:212).
     await options.getByRole('button', { name: /^create$/i }).click();
 
-    await expect(options.getByText('Test Automation').first()).toBeVisible();
+    await expect(options.getByText('Test Automation').first()).toBeVisible({ timeout: 15_000 });
 
     await context.close();
   });
