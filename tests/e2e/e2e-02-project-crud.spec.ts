@@ -27,17 +27,25 @@ test.setTimeout(120_000);
  * Priority: P0 | Auto: ✅ | Est: 3 min
  */
 
-async function seedOnboardingComplete(context: import('@playwright/test').BrowserContext, extensionId: string) {
-  // Open a throwaway extension page so we can write to chrome.storage.local
-  // *before* the test's Options page boot reads the onboarding flag.
-  const seedPage = await context.newPage();
-  await seedPage.goto(optionsUrl(extensionId));
-  await seedPage.evaluate(async () => {
-    await new Promise<void>(resolve =>
-      chrome.storage.local.set({ marco_onboarding_complete: true }, () => resolve()),
-    );
+async function seedOnboardingComplete(context: import('@playwright/test').BrowserContext) {
+  // Seed the onboarding flag via the service worker rather than by opening a
+  // full Options page. Opening Options without the flag mounts <OnboardingFlow />,
+  // which kicks off heavy background work (project-DB init, manifest seed) that
+  // then competes with the actual test's Options mount and pushes the whole
+  // flow past the 60s test budget. Writing through the SW skips the UI mount
+  // entirely and is effectively instant.
+  let [sw] = context.serviceWorkers();
+  if (!sw) sw = await context.waitForEvent('serviceworker');
+  await sw.evaluate(async () => {
+    await chrome.storage.local.set({ marco_onboarding_complete: true });
   });
-  await seedPage.close();
+}
+
+async function waitForProjectsView(options: import('@playwright/test').Page) {
+  // Mount budget on the Options page is ~1.7s in dev (see console logs);
+  // give the Projects header a generous window so the subsequent
+  // "New Project" click does not race the dashboard mount.
+  await expect(options.getByRole('heading', { name: /^projects$/i })).toBeVisible({ timeout: 30_000 });
 }
 
 test.describe('E2E-02 — Project CRUD Lifecycle', () => {
