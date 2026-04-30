@@ -75,8 +75,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   test('update project name', async () => {
     const context = await launchExtension(chromium);
     const extensionId = await getExtensionId(context);
-    await seedOnboardingComplete(context, extensionId);
+    await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
+    await waitForProjectsView(options);
 
     // Setup
     await options.getByRole('button', { name: /^new project$/i }).click();
