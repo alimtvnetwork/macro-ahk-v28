@@ -1,5 +1,5 @@
-import { test, expect, chromium } from '@playwright/test';
-import { launchExtension, getExtensionId, openOptions } from './fixtures';
+import type { BrowserContext, Page } from '@playwright/test';
+import { test, expect, openOptions } from './fixtures';
 
 // CRUD flows touch the Options dashboard mount (~1.7s observed), the
 // background project-DB init, and several round-trips through the SW
@@ -27,7 +27,7 @@ test.setTimeout(120_000);
  * Priority: P0 | Auto: ✅ | Est: 3 min
  */
 
-async function seedOnboardingComplete(context: import('@playwright/test').BrowserContext) {
+async function seedOnboardingComplete(context: BrowserContext) {
   // Seed the onboarding flag via the service worker rather than by opening a
   // full Options page. Opening Options without the flag mounts <OnboardingFlow />,
   // which kicks off heavy background work (project-DB init, manifest seed) that
@@ -35,13 +35,13 @@ async function seedOnboardingComplete(context: import('@playwright/test').Browse
   // flow past the 60s test budget. Writing through the SW skips the UI mount
   // entirely and is effectively instant.
   let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent('serviceworker');
+  if (!sw) sw = await context.waitForEvent('serviceworker', { timeout: 15_000 });
   await sw.evaluate(async () => {
     await chrome.storage.local.set({ marco_onboarding_complete: true });
   });
 }
 
-async function waitForProjectsView(options: import('@playwright/test').Page) {
+async function waitForProjectsView(options: Page) {
   // Mount budget on the Options page is ~1.7s in dev (see console logs);
   // give the Projects header a generous window so the subsequent
   // "New Project" click does not race the dashboard mount.
@@ -49,9 +49,7 @@ async function waitForProjectsView(options: import('@playwright/test').Page) {
 }
 
 test.describe('E2E-02 — Project CRUD Lifecycle', () => {
-  test('create a new project', async () => {
-    const context = await launchExtension(chromium);
-    const extensionId = await getExtensionId(context);
+  test('create a new project', async ({ context, extensionId }) => {
     await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
     await waitForProjectsView(options);
@@ -69,12 +67,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
 
     await expect(options.getByText('Test Automation').first()).toBeVisible({ timeout: 15_000 });
 
-    await context.close();
   });
 
-  test('update project name', async () => {
-    const context = await launchExtension(chromium);
-    const extensionId = await getExtensionId(context);
+  test('update project name', async ({ context, extensionId }) => {
     await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
     await waitForProjectsView(options);
@@ -111,12 +106,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
 
     await expect(options.getByText('Test Automation v2').first()).toBeVisible({ timeout: 10000 });
 
-    await context.close();
   });
 
-  test('delete project cleans up storage', async () => {
-    const context = await launchExtension(chromium);
-    const extensionId = await getExtensionId(context);
+  test('delete project cleans up storage', async ({ context, extensionId }) => {
     await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
     await waitForProjectsView(options);
@@ -144,6 +136,5 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
 
     await expect(options.getByText('Delete Me')).not.toBeVisible({ timeout: 10000 });
 
-    await context.close();
   });
 });
