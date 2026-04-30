@@ -23,8 +23,8 @@ export default defineConfig({
   /* Fail fast in CI; allow retries locally */
   retries: process.env.CI ? 0 : 1,
 
-  /* Each E2E flow is estimated at 2–5 min; generous per-test timeout */
-  timeout: 60_000,
+  /* Each extension E2E flow can include SW cold-start + Options boot. */
+  timeout: 120_000,
   expect: { timeout: 10_000 },
 
   /* Parallelism: disabled — extension tests share a single browser context */
