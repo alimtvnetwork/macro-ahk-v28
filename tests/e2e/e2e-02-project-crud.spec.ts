@@ -117,8 +117,9 @@ test.describe('E2E-02 — Project CRUD Lifecycle', () => {
   test('delete project cleans up storage', async () => {
     const context = await launchExtension(chromium);
     const extensionId = await getExtensionId(context);
-    await seedOnboardingComplete(context, extensionId);
+    await seedOnboardingComplete(context);
     const options = await openOptions(context, extensionId);
+    await waitForProjectsView(options);
 
     await options.getByRole('button', { name: /^new project$/i }).click();
     await options.getByPlaceholder(/project name/i).fill('Delete Me');
