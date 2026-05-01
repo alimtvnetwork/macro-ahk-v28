@@ -29,8 +29,14 @@ concurrency:
   # branch/PR cancels any in-progress run instead of letting two
   # commits race to completion. Falls back to SHA for non-branch
   # events (tags, manual dispatch) so unrelated runs don't collide.
-  group: ci-${{ github.workflow }}-${{ github.ref || github.sha }}
-  cancel-in-progress: true
+  #
+  # NOTE: per-SHA grouping means each commit gets its own concurrency
+  # slot, so a follow-up push will NOT cancel the in-flight E2E run
+  # for the previous commit (which was producing "The operation was
+  # canceled" mid-Vite-transform). Each pushed SHA now runs to
+  # completion independently.
+  group: ci-${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -2137,7 +2143,12 @@ jobs:
     name: E2E · Playwright (Chrome extension)
     needs: [build-extension, verify-built-manifest-csp]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Full E2E flow = build all 7 standalones + extension (~7-8 min) +
+    # Playwright suite (~5-8 min) + browser install + xvfb. The previous
+    # 30-minute budget was tight enough that a slow runner could SIGTERM
+    # the job mid-Vite-transform ("The operation was canceled."). Bumped
+    # to 60 to give comfortable headroom on cold cache runs.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -2177,6 +2188,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
       - name: Run Playwright E2E suite under xvfb
+        # Step-level cap below the 60 min job cap so the runner surfaces
+        # a clear "step exceeded timeout" annotation instead of the
+        # generic job-level "The operation was canceled."
+        timeout-minutes: 45
         env:
           CI: 'true'
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" pnpm exec playwright test
