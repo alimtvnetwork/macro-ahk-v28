@@ -27,18 +27,48 @@ test.setTimeout(120_000);
  * Priority: P0 | Auto: ✅ | Est: 3 min
  */
 
-async function seedOnboardingComplete(context: BrowserContext) {
+async function seedOnboardingComplete(context: BrowserContext, extensionId: string) {
   // Seed the onboarding flag via the service worker rather than by opening a
   // full Options page. Opening Options without the flag mounts <OnboardingFlow />,
   // which kicks off heavy background work (project-DB init, manifest seed) that
   // then competes with the actual test's Options mount and pushes the whole
   // flow past the 60s test budget. Writing through the SW skips the UI mount
   // entirely and is effectively instant.
+  //
+  // MV3 service workers go idle after ~30s and `context.serviceWorkers()` may
+  // return a worker handle whose `chrome.*` globals have already been torn
+  // down — evaluate() then throws "Cannot read properties of undefined
+  // (reading 'local')". Wake the SW with a no-op fetch first, and fall back
+  // to seeding via a chrome-extension:// page (which has the same
+  // chrome.storage.local origin) if SW evaluate still fails.
   let [sw] = context.serviceWorkers();
-  if (!sw) sw = await context.waitForEvent('serviceworker', { timeout: 15_000 });
-  await sw.evaluate(async () => {
+  if (!sw) {
+    try {
+      sw = await context.waitForEvent('serviceworker', { timeout: 5_000 });
+    } catch {
+      sw = undefined as unknown as typeof sw;
+    }
+  }
+
+  if (sw) {
+    try {
+      await sw.evaluate(async () => {
+        await chrome.storage.local.set({ marco_onboarding_complete: true });
+      });
+      return;
+    } catch {
+      // SW was idle / torn down — fall through to page-based seeding.
+    }
+  }
+
+  // Fallback: open a lightweight extension page and write from there. The
+  // manifest.json page is guaranteed to exist and does not mount any React.
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/manifest.json`);
+  await page.evaluate(async () => {
     await chrome.storage.local.set({ marco_onboarding_complete: true });
   });
+  await page.close();
 }
 
 async function waitForProjectsView(options: Page) {
