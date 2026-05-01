@@ -79,7 +79,7 @@ async function waitForProjectsView(options: Page) {
 }
 
 async function openCrudOptions(context: BrowserContext, extensionId: string): Promise<Page> {
-  await seedOnboardingComplete(context);
+  await seedOnboardingComplete(context, extensionId);
   const options = await openOptions(context, extensionId);
 
   // The recorder controller is fixed in the top-right of Options and can cover
