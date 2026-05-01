@@ -29,8 +29,14 @@ concurrency:
   # branch/PR cancels any in-progress run instead of letting two
   # commits race to completion. Falls back to SHA for non-branch
   # events (tags, manual dispatch) so unrelated runs don't collide.
-  group: ci-${{ github.workflow }}-${{ github.ref || github.sha }}
-  cancel-in-progress: true
+  #
+  # NOTE: per-SHA grouping means each commit gets its own concurrency
+  # slot, so a follow-up push will NOT cancel the in-flight E2E run
+  # for the previous commit (which was producing "The operation was
+  # canceled" mid-Vite-transform). Each pushed SHA now runs to
+  # completion independently.
+  group: ci-${{ github.workflow }}-${{ github.sha }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
