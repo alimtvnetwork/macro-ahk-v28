@@ -2143,7 +2143,12 @@ jobs:
     name: E2E · Playwright (Chrome extension)
     needs: [build-extension, verify-built-manifest-csp]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # Full E2E flow = build all 7 standalones + extension (~7-8 min) +
+    # Playwright suite (~5-8 min) + browser install + xvfb. The previous
+    # 30-minute budget was tight enough that a slow runner could SIGTERM
+    # the job mid-Vite-transform ("The operation was canceled."). Bumped
+    # to 60 to give comfortable headroom on cold cache runs.
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
