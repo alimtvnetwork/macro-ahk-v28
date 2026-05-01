@@ -77,22 +77,63 @@ async function globalSetup() {
     { label: 'extension',        script: 'build:extension',        timeout: 240_000 },
   ];
 
-  for (const step of buildSteps) {
+  // Step-level diagnostics: each build prints a clear START / END banner
+  // with wall-clock elapsed seconds, plus a 30s heartbeat so we can pin
+  // down which Vite build was still running if the runner SIGTERMs the
+  // job mid-flight (e.g. "The operation was canceled."). Without this,
+  // a cancellation inside vite's chunk transform shows up as a generic
+  // "Error: The operation was canceled." with no attribution.
+  const overallStart = Date.now();
+  console.log(`\n══════════════════════════════════════════════════════════`);
+  console.log(`🔨 Standalone + extension build pipeline — ${buildSteps.length} steps`);
+  console.log(`══════════════════════════════════════════════════════════`);
+
+  for (let i = 0; i < buildSteps.length; i++) {
+    const step = buildSteps[i];
     const cmd = `${pm} run ${step.script}`;
-    console.log(`\n→ Building ${step.label} (${cmd})…`);
+    const stepStart = Date.now();
+    const stepNum = `[${i + 1}/${buildSteps.length}]`;
+
+    console.log(`\n──────────────────────────────────────────────────────────`);
+    console.log(`▶ START ${stepNum} ${step.label}`);
+    console.log(`  cmd      : ${cmd}`);
+    console.log(`  budget   : ${(step.timeout / 1000).toFixed(0)}s`);
+    console.log(`  t+elapsed: ${((stepStart - overallStart) / 1000).toFixed(1)}s since pipeline start`);
+    console.log(`──────────────────────────────────────────────────────────`);
+
+    // 30s heartbeat — proves the step is still alive and surfaces the
+    // last-known-active step in CI logs even if execSync's stdout is
+    // buffered when the runner kills the process.
+    const heartbeat = setInterval(() => {
+      const elapsedSec = ((Date.now() - stepStart) / 1000).toFixed(1);
+      console.log(`  ⏱  [heartbeat] ${step.label} still running (${elapsedSec}s elapsed, budget ${(step.timeout / 1000).toFixed(0)}s)`);
+    }, 30_000);
+
     try {
       execSync(cmd, {
         cwd: repoRoot,
         stdio: 'inherit',
         timeout: step.timeout,
       });
+      clearInterval(heartbeat);
+      const elapsed = ((Date.now() - stepStart) / 1000).toFixed(1);
+      console.log(`✅ END   ${stepNum} ${step.label} — ${elapsed}s`);
     } catch (err) {
+      clearInterval(heartbeat);
+      const elapsed = ((Date.now() - stepStart) / 1000).toFixed(1);
+      console.error(`\n❌ FAIL  ${stepNum} ${step.label} — failed after ${elapsed}s (budget ${(step.timeout / 1000).toFixed(0)}s)`);
+      console.error(`   cmd: ${cmd}`);
       throw new Error(
-        `Build step "${step.label}" failed (command: ${cmd}).\n` +
+        `Build step "${step.label}" failed after ${elapsed}s (command: ${cmd}).\n` +
         `Ensure the corresponding npm script exists in package.json and that prior steps produced their dist/ output.\n${err}`
       );
     }
   }
+
+  const totalElapsed = ((Date.now() - overallStart) / 1000).toFixed(1);
+  console.log(`\n══════════════════════════════════════════════════════════`);
+  console.log(`✅ All ${buildSteps.length} build steps complete — total ${totalElapsed}s`);
+  console.log(`══════════════════════════════════════════════════════════\n`);
 
   // Step 2: Re-resolve extension dir AFTER the build (build:extension may have created it).
   const builtDir = pickExtensionDir();
