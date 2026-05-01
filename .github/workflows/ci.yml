@@ -2187,6 +2187,10 @@ jobs:
       - name: Install xvfb
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
+      - name: Prepare diagnostic log directory
+        if: always()
+        run: mkdir -p test-results/logs
+
       - name: Run Playwright E2E suite under xvfb
         # Step-level cap below the 60 min job cap so the runner surfaces
         # a clear "step exceeded timeout" annotation instead of the
@@ -2194,7 +2198,18 @@ jobs:
         timeout-minutes: 45
         env:
           CI: 'true'
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" pnpm exec playwright test
+          # Force unbuffered stdout from Node-spawned children (Vite,
+          # tsc, etc.) so the tee'd log captures heartbeat lines even if
+          # the runner SIGTERMs the process mid-transform.
+          FORCE_COLOR: '0'
+        # Tee everything to a log file (`set -o pipefail` so a non-zero
+        # exit from playwright still fails the step). The log persists
+        # to the next step even if this one is cancelled or fails.
+        run: |
+          set -o pipefail
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x800x24" \
+            pnpm exec playwright test 2>&1 \
+            | tee test-results/logs/playwright-e2e.log
 
       - name: Upload Playwright HTML report
         if: always()
@@ -2203,14 +2218,37 @@ jobs:
           name: playwright-report
           path: test-results/html
           retention-days: 7
+          if-no-files-found: ignore
 
       - name: Upload Playwright artifacts (traces, videos, screenshots)
-        if: failure()
+        # Was `if: failure()` — switched to `always()` so cancelled runs
+        # (e.g. job timeout / SIGTERM mid-build) still surface whatever
+        # traces/videos/screenshots Playwright managed to write.
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: playwright-artifacts
           path: test-results/artifacts
           retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Upload E2E diagnostic logs (always, incl. cancellation)
+        # Captures the tee'd Playwright/Vite stdout + any partially-built
+        # standalone dist trees, so a cancelled job still yields enough
+        # context to attribute the cancellation to a specific step.
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-diagnostic-logs
+          path: |
+            test-results/logs/**
+            test-results/junit.xml
+            dist/manifest.json
+            chrome-extension/manifest.json
+            standalone-scripts/*/dist/instruction.json
+            standalone-scripts/*/dist/*.js
+          retention-days: 7
+          if-no-files-found: ignore
 
   # ════════════════════════════════════════════════════════════
   # Registry-required build stubs.
